@@ -6,39 +6,21 @@
 #include "linmath.h"
 
 #include <cmath>
-#include <vector>
 #include <string>
-#include <sstream>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+using namespace glm;
 #include <iostream>
+#include <vector>
 
 #define M_PI 3.141592653589793238462
 
-#define CHECK_GL { GLenum glStatus = glGetError(); if( glStatus != GL_NO_ERROR ) { std::cout << "File: " << __FILE__ << "(" << __LINE__ << ") " << "OpenGL error: " << openglGetErrorString( glStatus ); } }
-static std::string openglGetErrorString(GLenum status)
-{
-	std::stringstream ss;
+#include "shader.cpp"
 
-	switch (status)
-	{
-	case GL_INVALID_ENUM:
-		ss << "GL_INVALID_ENUM";
-		break;
-	case GL_INVALID_VALUE:
-		ss << "GL_INVALID_VALUE";
-		break;
-	case GL_INVALID_OPERATION:
-		ss << "GL_INVALID_OPERATION";
-		break;
-	case GL_OUT_OF_MEMORY:
-		ss << "GL_OUT_OF_MEMORY";
-		break;
-	default:
-		ss << "GL_UNKNOWN_ERROR" << " - " << status;
-		break;
-	}
-
-	return ss.str();
-}
+#include "UploadImage.cpp"
 
 class GLMeshData
 {
@@ -52,10 +34,11 @@ public:
     void createCone(float radius, float height, uint32_t segments);
     void createCylinder(float radius, float height, uint32_t segments);
     void createTrapezoid(float baseWidth, float topWidth, float height, float depth);
-    void createRectangle(float width, float height);
+    void createQuad();
     void createCircle(float radius, uint32_t segments);
 
 	void render();
+    void renderQuad();
 	void clear();
 
 protected:
@@ -448,20 +431,17 @@ void GLMeshData::createCircle(float radius, uint32_t segments)
     createGLObjects();
 }
 
-void GLMeshData::createRectangle(float width, float height)
+void GLMeshData::createQuad()
 {
+#if  0
     numPrimitives = 2;
-
-    float halfWidth = width * 0.5f;
-    float halfHeight = height * 0.5f;
-    
 
     // Vertices
     posData = {
-        -halfWidth, -halfHeight, 0.0f,
-         halfWidth, -halfHeight, 0.0f,
-         halfWidth,  halfHeight, 0.0f,
-        -halfWidth,  halfHeight, 0.0f
+        0.0f,  0.0f, 0,
+        1.0f,  0.0f, 0,
+        1.0f,  1.0f, 0,
+        0.0f,  1.0f, 0,
     };
 
     // UV coordinates
@@ -479,6 +459,29 @@ void GLMeshData::createRectangle(float width, float height)
     };
 
     createGLObjects();
+
+#else
+    float quadVertices[] = {
+        // positions   // texture coords
+         0.0f,  1.0f,  0.0f, 1.0f,
+         1.0f,  1.0f,  1.0f, 1.0f,
+         0.0f,  0.0f,  0.0f, 0.0f,
+         1.0f,  0.0f,  1.0f, 0.0f
+    };
+
+    glGenVertexArrays(1, &meshVAID);
+    glGenBuffers(1, &meshVBID_pos);
+    glBindVertexArray(meshVAID);
+    glBindBuffer(GL_ARRAY_BUFFER, meshVBID_pos);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+#endif  //0
 }
 
 void GLMeshData::createGLObjects()
@@ -546,21 +549,18 @@ void GLMeshData::render()
 	CHECK_GL;
 }
 
+void GLMeshData::renderQuad()
+{
+	glBindVertexArray(meshVAID);
+	CHECK_GL;
 
-#define STB_IMAGE_IMPLEMENTATION
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	CHECK_GL;
 
-#include <stb/stb_image.h>
+	glBindVertexArray(0);
+	CHECK_GL;
+}
 
-#include <string>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-using namespace glm;
 
 int g_width  = 2560/2;
 int g_height = 1440/2;
@@ -634,87 +634,14 @@ uniform sampler2D myTextureSampler;
 void main(){
 
 	// Output color = color of the texture at the specified UV
-	color = texture( myTextureSampler, UV );
+    vec4 c = texture( myTextureSampler, UV );
+	color = vec4(c.rgb,c.a);
 }
 
 )FRAGMENT";
 
-GLenum glCheckError_(const char *file, int line)
-{
-    GLenum errorCode;
-    while ((errorCode = glGetError()) != GL_NO_ERROR)
-    {
-        std::string error;
-        switch (errorCode)
-        {
-            case GL_INVALID_ENUM:                  error = "INVALID_ENUM"; break;
-            case GL_INVALID_VALUE:                 error = "INVALID_VALUE"; break;
-            case GL_INVALID_OPERATION:             error = "INVALID_OPERATION"; break;
-            case GL_STACK_OVERFLOW:                error = "STACK_OVERFLOW"; break;
-            case GL_STACK_UNDERFLOW:               error = "STACK_UNDERFLOW"; break;
-            case GL_OUT_OF_MEMORY:                 error = "OUT_OF_MEMORY"; break;
-            case GL_INVALID_FRAMEBUFFER_OPERATION: error = "INVALID_FRAMEBUFFER_OPERATION"; break;
-        }
-        std::cout << error << " | " << file << " (" << line << ")" << std::endl;
-    }
-    return errorCode;
-}
-#define glCheckError() glCheckError_(__FILE__, __LINE__) 
 
-GLuint compileShader(GLenum type, const char *source)
-{
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
 
-    GLint compiled;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-    if (!compiled)
-		{
-        GLint infoLen = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLen);
-        if (infoLen > 1)
-				{
-            char *infoLog = new char[infoLen];
-            glGetShaderInfoLog(shader, infoLen, nullptr, infoLog);
-            std::cerr << "Error compiling shader:\n" << infoLog << std::endl;
-            delete[] infoLog;
-        }
-        glDeleteShader(shader);
-        return 0;
-    }
-
-    return shader;
-}
-GLuint create_shader_program(const char* vertexSource, const char* fragmentSource)
-{
-	GLuint vertex_buffer, vertex_shader, fragment_shader, program;
- 
-	vertex_shader = compileShader(GL_VERTEX_SHADER, vertexSource);
-	fragment_shader = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
- 
-	program = glCreateProgram();
-	glAttachShader(program, vertex_shader);
-	glAttachShader(program, fragment_shader);
-	glLinkProgram(program);
-
-    GLint linked;
-    glGetProgramiv(program, GL_LINK_STATUS, &linked);
-    if (!linked) {
-        GLint infoLen = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &infoLen);
-        if (infoLen > 1)
-				{
-            char *infoLog = new char[infoLen];
-            glGetProgramInfoLog(program, infoLen, nullptr, infoLog);
-            std::cerr << "Error linking program:\n" << infoLog << std::endl;
-            delete[] infoLog;
-        }
-        glDeleteProgram(program);
-        return 0;
-    }
-    return(program);
-}
 GLFWwindow* window;
  
 void computeMatricesFromInputs()
@@ -846,78 +773,6 @@ glm::mat4 GetQuadMatrix(float x, float y, float width, float height)
     return OrthoProjection*model;
 }
 
-uint32_t UploadImage(const char *ImgSrc, bool repeat = false)
-{
-        uint32_t ImageId;
-        int imgWidth, imgHeight, numColCh;
-        unsigned char *bytes = stbi_load(ImgSrc, &imgWidth, &imgHeight, &numColCh, 0);
-
-        glGenTextures(1, &ImageId);
-        glBindTexture(GL_TEXTURE_2D, ImageId);
-
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        // if (repeat)
-        // {
-        //     // glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        //     // glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
-        // }else
-        // {
-        //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        //     // glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        //     // glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);    
-        // }
-
-            // Set texture wrapping/filtering options
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-   
-
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GLFW_CONTEXT_VERSION_MAJOR);
-
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-
-
-        
-        
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-
-         GLenum format;
-
-        if (numColCh == 1)
-        {
-            format = GL_RED;
-        } else if (numColCh == 3)
-        {
-            format = GL_RGB;
-        } else if (numColCh == 4)
-        {
-            format = GL_RGBA;
-        } else
-        {
-            throw std::invalid_argument("Automatic Texture type recognition failed");
-        }
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgWidth, imgHeight, 0, format, GL_UNSIGNED_BYTE, bytes);
-        // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, imgWidth, imgHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, bytes);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glBindTexture(GL_TEXTURE_2D, 0);
-        stbi_image_free(bytes);
-
-        return ImageId;
-}
 
 int main(void)
 {
@@ -1002,21 +857,23 @@ int main(void)
     circleMesh.createCircle(1.0f, 32);  // radius = 1.0, 32 segments
 
     GLMeshData rectangleMesh;
-    rectangleMesh.createRectangle(5.0f, 5.0f);  // width = 2.0, height = 1.0
+    rectangleMesh.createQuad();  // width = 2.0, height = 1.0
 
     // mat4x4_ortho(projection, 0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
 
     // GLuint circleImg = UploadImage("../res/textures/red-circle.png");
     // GLuint circleImg = UploadImage("../res/textures/circle.png");
-    GLuint circleImg = UploadImage("../res/textures/shoot.png");
-    GLuint rectImg = UploadImage("../res/textures/rect_round_corner.png");
+    GLuint circleImg = UploadImage("../res/textures/shoot2.png");
+    GLuint rectImg = UploadImage("../res/textures/rect_round_corner2.png");
+    GLuint exclaimImg = UploadImage("../res/textures/Exclamation_Mark.png");
     
     float aspect = (float)g_height/(float)g_width;
-    float w = g_width  * 0.01f;
+    float w = g_width  * 0.01f * aspect;
     float h = g_height * 0.01f;
 
-    auto circleMat = GetQuadMatrix(w*90.f,h*85.f, w*5.f*aspect,h*5.f);
-    auto rectMat = GetQuadMatrix(w*10.f,h*50.f, w*5.f*aspect,h*1.f);
+    auto circleMat = GetQuadMatrix(g_width - 20.f*w , g_height - 20.*h, w*20.f,h*20.f);
+    auto rectMat = GetQuadMatrix(w*1.f,h*50.f, w*20.f,h*5.f);
+    auto exclaimMark = GetQuadMatrix(w*1.f,h*20.f, w*5.f,h*5.f);
 
     do
     {
@@ -1112,14 +969,21 @@ int main(void)
             glBindTexture(GL_TEXTURE_2D, circleImg);
             glUniform1i(TextureID, 0);
             glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(circleMat));
-            rectangleMesh.render();
+            rectangleMesh.renderQuad();
             // myPlane.render();
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, rectImg);
             glUniform1i(TextureID, 0);
             glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(rectMat));
-            rectangleMesh.render();
+            rectangleMesh.renderQuad();
+
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, exclaimImg);
+            glUniform1i(TextureID, 0);
+            glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(exclaimMark));
+            rectangleMesh.renderQuad();
 
             
 
